@@ -1,0 +1,293 @@
+---
+title: "Wine Quality Prediction (Classification)"
+author: "Jun Li, Yuetong Wang"
+date: "`r Sys.Date()`"
+output:
+   html_document:
+     toc: TRUE
+     toc_float: TRUE
+     theme: "spacelab"
+     number_section: TRUE
+     fig_height: 4
+     fig_width: 4
+     fig_align: "center"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning=FALSE)
+library(stringr)
+library(readr)
+library(readxl)
+library(leaps)
+library(corrplot)
+library(dplyr)
+library(Metrics)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(ranger)
+library(randomForest)
+library(lubridate)
+library(tidyverse)
+```
+
+# Data Processing and Description
+
+## Load the dataset
+
+```{r}
+wine_quality <- read_csv("./wine-quality-white-and-red.csv", show_col_types = FALSE)
+```
+
+## Check the missing value
+
+```{r}
+wine_quality <- na.omit(wine_quality)
+```
+
+## Change the column name
+
+```{r}
+colnames(wine_quality) <- c("type", "fixed_acidity", "volatile_acidity", "citric_acid", "residual_sugar", "chlorides", "free_sulfur_dioxide", "total_sulfur_dioxide", "density", "pH", "sulphates", "alcohol", "quality")
+```
+
+## Create the dummy variable for type
+
+```{r}
+for (i in 1:nrow(wine_quality)) {
+  ifelse(wine_quality$type[i] == "white", wine_quality$type_white[i] <- 1, wine_quality$type_white[i] <- 0)
+}
+```
+
+## Change quality as label
+
+```{r}
+wine_quality$quality <- factor(wine_quality$quality)
+```
+
+
+## Select the dependent and independent variables
+
+```{r}
+Final_wine_quality <- wine_quality[,2:14]
+```
+
+## Scale the predictors
+
+```{r}
+scaled_wine_quality <- cbind(scale(Final_wine_quality[, -12]), Final_wine_quality[, 12, drop = FALSE])
+```
+
+
+# Multinomial Logistic Regression
+
+```{r}
+library(nnet)
+library(caret)
+
+accuracy_values <- numeric(100)
+misclassification_rate_values <- numeric(100)
+
+for (i in 1:100) {
+  set.seed(i)
+  
+  train_index <- sample(nrow(scaled_wine_quality), nrow(scaled_wine_quality)*0.7)
+  train_data <- scaled_wine_quality[train_index, ]
+  test_data <- scaled_wine_quality[-train_index, ]
+  
+  multinomial_model <- multinom(quality ~ fixed_acidity + volatile_acidity + citric_acid + residual_sugar + chlorides + free_sulfur_dioxide + total_sulfur_dioxide + density + pH + sulphates + alcohol + type_white, data = train_data, trace = FALSE)
+  
+  test_pred_multinomial <- predict(multinomial_model, newdata = test_data)
+  
+  confusion_matrix <- confusionMatrix(test_pred_multinomial, test_data$quality)
+  accuracy <- confusion_matrix$overall['Accuracy']
+  accuracy_values[i] <- accuracy
+  
+  misclassification_rate <- mean(test_pred_multinomial != test_data$quality)
+  misclassification_rate_values[i] <- misclassification_rate
+}
+
+mean_accuracy <- mean(accuracy_values)
+mean_misclassification_rate <- mean(misclassification_rate_values)
+
+print(paste("Mean Accuracy:", mean_accuracy))
+print(paste("Mean Misclassification Rate:", mean_misclassification_rate))
+
+```
+
+
+# LDA
+
+```{r}
+library(MASS)
+
+accuracy_values <- numeric(100)
+misclassification_rate_values <- numeric(100)
+
+for (i in 1:100) {
+  set.seed(i)
+  
+  train_index <- sample(nrow(scaled_wine_quality), nrow(scaled_wine_quality)*0.7)
+  train_data <- scaled_wine_quality[train_index, ]
+  test_data <- scaled_wine_quality[-train_index, ]
+  
+  LDA_model <- lda(quality ~ fixed_acidity + volatile_acidity + citric_acid + residual_sugar + chlorides + free_sulfur_dioxide + total_sulfur_dioxide + density + pH + sulphates + alcohol + type_white, data = train_data)
+  
+  test_pred_LDA <- predict(LDA_model, newdata = test_data)
+  
+  confusion_matrix <- confusionMatrix(test_pred_LDA$class, test_data$quality)
+  accuracy <- confusion_matrix$overall['Accuracy']
+  accuracy_values[i] <- accuracy
+  
+  misclassification_rate <- mean(test_pred_LDA$class != test_data$quality)
+  misclassification_rate_values[i] <- misclassification_rate
+}
+
+mean_accuracy <- mean(accuracy_values)
+mean_misclassification_rate <- mean(misclassification_rate_values)
+
+print(paste("Mean Accuracy:", mean_accuracy))
+print(paste("Mean Misclassification Rate:", mean_misclassification_rate))
+
+```
+
+# Naive Bayes
+
+```{r}
+library(e1071)
+
+accuracy_values <- numeric(100)
+misclassification_rate_values <- numeric(100)
+
+for (i in 1:100) {
+  set.seed(i)
+  
+  train_index <- sample(nrow(scaled_wine_quality), nrow(scaled_wine_quality)*0.7)
+  train_data <- scaled_wine_quality[train_index, ]
+  test_data <- scaled_wine_quality[-train_index, ]
+  
+  NB_model <- naiveBayes(quality ~ fixed_acidity + volatile_acidity + citric_acid + residual_sugar + chlorides + free_sulfur_dioxide + total_sulfur_dioxide + density + pH + sulphates + alcohol + type_white, data = train_data)
+  
+  test_pred_NB <- predict(NB_model, newdata = test_data)
+  
+  confusion_matrix <- confusionMatrix(test_pred_NB, test_data$quality)
+  accuracy <- confusion_matrix$overall['Accuracy']
+  accuracy_values[i] <- accuracy
+  
+  misclassification_rate <- mean(test_pred_NB != test_data$quality)
+  misclassification_rate_values[i] <- misclassification_rate
+}
+
+mean_accuracy <- mean(accuracy_values)
+mean_misclassification_rate <- mean(misclassification_rate_values)
+
+print(paste("Mean Accuracy:", mean_accuracy))
+print(paste("Mean Misclassification Rate:", mean_misclassification_rate))
+
+```
+
+# Decision Tree
+
+```{r}
+library(rpart)
+
+accuracy_values <- numeric(100)
+misclassification_rate_values <- numeric(100)
+
+for (i in 1:100) {
+  set.seed(i)
+  
+  train_index <- sample(nrow(Final_wine_quality), nrow(Final_wine_quality)*0.7)
+  train_data <- Final_wine_quality[train_index, ]
+  test_data <- Final_wine_quality[-train_index, ]
+  
+  tree_model <- rpart(quality ~ fixed_acidity + volatile_acidity + citric_acid + residual_sugar + chlorides + free_sulfur_dioxide + total_sulfur_dioxide + density + pH + sulphates + alcohol + type_white, data = train_data)
+  
+  test_pred_tree <- predict(tree_model, newdata = test_data, type = "class")
+  
+  confusion_matrix <- confusionMatrix(test_pred_tree, test_data$quality)
+  accuracy <- confusion_matrix$overall['Accuracy']
+  accuracy_values[i] <- accuracy
+  
+  misclassification_rate <- mean(test_pred_tree != test_data$quality)
+  misclassification_rate_values[i] <- misclassification_rate
+}
+
+mean_accuracy <- mean(accuracy_values)
+mean_misclassification_rate <- mean(misclassification_rate_values)
+
+print(paste("Mean Accuracy:", mean_accuracy))
+print(paste("Mean Misclassification Rate:", mean_misclassification_rate))
+
+```
+
+# Random Forest
+
+```{r}
+library(ranger)
+
+accuracy_values <- numeric(100)
+misclassification_rate_values <- numeric(100)
+
+for (i in 1:100) {
+  set.seed(i)
+  
+  train_index <- sample(nrow(Final_wine_quality), nrow(Final_wine_quality)*0.7)
+  train_data <- Final_wine_quality[train_index, ]
+  test_data <- Final_wine_quality[-train_index, ]
+  
+  rf_model <- ranger(quality ~ fixed_acidity + volatile_acidity + citric_acid + residual_sugar + chlorides + free_sulfur_dioxide + total_sulfur_dioxide + density + pH + sulphates + alcohol + type_white, data = train_data)
+  
+  test_pred_rf <- predict(rf_model, data = test_data)$predictions
+  
+  confusion_matrix <- confusionMatrix(test_pred_rf, test_data$quality)
+  accuracy <- confusion_matrix$overall['Accuracy']
+  accuracy_values[i] <- accuracy
+  
+  misclassification_rate <- mean(test_pred_rf != test_data$quality)
+  misclassification_rate_values[i] <- misclassification_rate
+}
+
+mean_accuracy <- mean(accuracy_values)
+mean_misclassification_rate <- mean(misclassification_rate_values)
+
+print(paste("Mean Accuracy:", mean_accuracy))
+print(paste("Mean Misclassification Rate:", mean_misclassification_rate))
+
+```
+
+# Kernel SVM 
+
+```{r}
+library(kernlab)
+
+accuracy_values <- numeric(100)
+misclassification_rate_values <- numeric(100)
+
+for (i in 1:100) {
+  set.seed(i)
+  
+  train_index <- sample(nrow(scaled_wine_quality), nrow(scaled_wine_quality)*0.7)
+  train_data <- scaled_wine_quality[train_index, ]
+  test_data <- scaled_wine_quality[-train_index, ]
+  
+  svm_model <- ksvm(quality ~ fixed_acidity + volatile_acidity + citric_acid + residual_sugar + chlorides + free_sulfur_dioxide + total_sulfur_dioxide + density + pH + sulphates + alcohol + type_white, data = train_data, kernel = "rbfdot")
+  
+  test_pred_svm <- predict(svm_model, newdata = test_data)
+  
+  confusion_matrix <- confusionMatrix(test_pred_svm, test_data$quality)
+  accuracy <- confusion_matrix$overall['Accuracy']
+  accuracy_values[i] <- accuracy
+  
+  misclassification_rate <- mean(test_pred_svm != test_data$quality)
+  misclassification_rate_values[i] <- misclassification_rate
+}
+
+mean_accuracy <- mean(accuracy_values)
+mean_misclassification_rate <- mean(misclassification_rate_values)
+
+print(paste("Mean Accuracy:", mean_accuracy))
+print(paste("Mean Misclassification Rate:", mean_misclassification_rate))
+
+```
+
